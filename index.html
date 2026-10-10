@@ -4,31 +4,46 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Animated Multi-Character Roleplay &amp; Story Playground</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root {
-      --bg: #0e0f13;
-      --panel: rgba(28, 30, 38, 0.55);
-      --border: rgba(255, 255, 255, 0.08);
+      --bg: #0b0c10;
+      --panel: rgba(24, 26, 34, 0.6);
+      --panel-strong: rgba(30, 33, 43, 0.85);
+      --border: rgba(255, 255, 255, 0.07);
       --accent: #7c8cff;
-      --accent-2: #b07cff;
-      --text: #e7e9f0;
-      --muted: #8a8fa3;
+      --accent-2: #c084fc;
+      --text: #eceef5;
+      --muted: #8b90a4;
       --online: #34d399;
     }
     html, body { height: 100%; }
     body {
-      background: radial-gradient(1200px 600px at 10% -10%, #1d2140 0%, transparent 60%),
-                  radial-gradient(900px 500px at 110% 110%, #2a1640 0%, transparent 60%),
-                  var(--bg);
+      background:
+        radial-gradient(900px 500px at 0% -10%, rgba(124,140,255,.18), transparent 60%),
+        radial-gradient(800px 500px at 110% 110%, rgba(192,132,252,.14), transparent 60%),
+        var(--bg);
       color: var(--text);
       font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
     }
     .glass {
       background: var(--panel);
-      backdrop-filter: blur(16px) saturate(140%);
-      -webkit-backdrop-filter: blur(16px) saturate(140%);
+      backdrop-filter: blur(18px) saturate(150%);
+      -webkit-backdrop-filter: blur(18px) saturate(150%);
       border: 1px solid var(--border);
+    }
+    .glass-strong {
+      background: var(--panel-strong);
+      backdrop-filter: blur(22px) saturate(160%);
+      -webkit-backdrop-filter: blur(22px) saturate(160%);
+      border: 1px solid var(--border);
+    }
+    .char-active {
+      background: linear-gradient(90deg, rgba(124,140,255,.18), rgba(192,132,252,.06));
+      box-shadow: inset 3px 0 0 var(--accent);
     }
     .scrollbar::-webkit-scrollbar { width: 6px; }
     .scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 6px; }
@@ -84,8 +99,12 @@
     textarea, input { outline: none; }
     textarea:focus, input:focus { border-color: rgba(124,140,255,.6) !important; box-shadow: 0 0 0 3px rgba(124,140,255,.15); }
     .avatar-ring { box-shadow: 0 0 0 2px rgba(124,140,255,.35); }
-    .bubble-ai { border-top-left-radius: 6px; }
-    .bubble-user { border-top-right-radius: 6px; background: linear-gradient(135deg, #5b6cff, #8f5cff); }
+    .bubble-ai { border-top-left-radius: 6px; background: rgba(30, 33, 43, .75); border: 1px solid var(--border); }
+    .bubble-user { border-top-right-radius: 6px; background: linear-gradient(135deg, #6366f1, #a855f7); box-shadow: 0 10px 30px -12px rgba(99,102,241,.7); }
+    .bubble-error { background: rgba(127, 29, 29, .35); border: 1px solid rgba(248,113,113,.3); }
+    .composer-box:focus-within { box-shadow: 0 0 0 3px rgba(124,140,255,.18); border-color: rgba(124,140,255,.5); }
+    .empty-orb { background: conic-gradient(from 200deg, #7c8cff, #c084fc, #22d3ee, #7c8cff); filter: blur(0px); animation: spin 14s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .msg-text { white-space: pre-wrap; word-wrap: break-word; line-height: 1.6; }
     .sidebar-hidden { transform: translateX(-100%); }
     @media (min-width: 768px) { .sidebar-hidden { transform: none; } }
@@ -177,8 +196,8 @@
     </div>
     <p class="text-[11px] text-[var(--muted)] mt-2 leading-relaxed">
       Stored only in your browser's LocalStorage. Requests go to
-      <code class="text-[#c9b8ff]">integrate.api.nvidia.com</code> with model
-      <code class="text-[#c9b8ff]">meta/llama-3.1-70b-instruct</code>.
+      <code class="text-[#c9b8ff]">/api/chat</code> to NVIDIA NIM, model
+      <code class="text-[#c9b8ff]">meta/llama-3.2-90b-vision-instruct</code>. The key is forwarded, never stored on the server.
     </p>
     <div class="flex justify-between items-center mt-6">
       <button id="clearKeyBtn" class="btn text-xs text-red-300 hover:text-red-200">Remove key</button>
@@ -259,8 +278,10 @@
   "use strict";
 
   // ---------- Config ----------
-  const API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-  const MODEL = "meta/llama-3.1-70b-instruct";
+  // Calls go through our Vercel function (api/chat.js) because NVIDIA NIM
+  // does not allow direct browser requests (no CORS header).
+  const API_URL = "/api/chat";
+  const MODEL = "meta/llama-3.2-90b-vision-instruct";
   const MAX_HISTORY = 30;          // messages sent to the API per request
   const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
   const KEYS = { chars: "rp.characters", chats: "rp.chats", active: "rp.activeId", apiKey: "rp.apiKey" };
@@ -371,7 +392,7 @@
       const last = chat[chat.length - 1];
       const preview = last ? last.content.replace(/\*/g, "").slice(0, 40) : "Start a conversation";
       const item = document.createElement("button");
-      item.className = `char-item w-full flex items-center gap-3 p-2.5 rounded-xl text-left ${c.id === activeId ? "bg-white/10" : "hover:bg-white/5"} fade-in`;
+      item.className = `char-item w-full flex items-center gap-3 p-2.5 rounded-xl text-left ${c.id === activeId ? "char-active" : "hover:bg-white/5"} fade-in`;
       item.style.animationDelay = `${i * 40}ms`;
       item.innerHTML = `
         <img src="${avatarOf(c)}" class="w-11 h-11 rounded-full object-cover shrink-0 bg-white/5" alt="" />
@@ -432,7 +453,7 @@
     if (!c) {
       box.innerHTML = `
         <div class="h-full flex flex-col items-center justify-center text-center fade-in">
-          <div class="w-20 h-20 rounded-3xl grad-btn flex items-center justify-center text-3xl font-bold text-white mb-5">R</div>
+          <div class="empty-orb w-24 h-24 rounded-[2rem] mb-6 shadow-2xl"></div>
           <h2 class="text-xl font-semibold">Welcome to the Playground</h2>
           <p class="text-sm text-[var(--muted)] mt-2 max-w-sm">Create a character from the sidebar, give it a personality, and start a story. Don't forget to add your NVIDIA API key in Settings.</p>
         </div>`;
@@ -446,7 +467,7 @@
       const avatar = isUser ? "" : `<img src="${avatarOf(c)}" class="w-8 h-8 rounded-full object-cover shrink-0 avatar-ring" alt="" />`;
       const bubbleClass = isUser
         ? "bubble-user text-white"
-        : "glass bubble-ai text-[var(--text)]";
+        : m.error ? "bubble-error text-red-100" : "bubble-ai text-[var(--text)]";
       row.innerHTML = `
         ${avatar}
         <div class="max-w-[80%] md:max-w-[65%] rounded-2xl px-4 py-3 shadow-lg ${bubbleClass}">
@@ -523,7 +544,10 @@
       chats[c.id] = [...chats[c.id], { id: uid(), role: "assistant", content: reply, ts: Date.now() }];
       save.chats();
     } catch (err) {
-      chats[c.id] = [...chats[c.id], { id: uid(), role: "assistant", content: `⚠️ ${err.message}`, ts: Date.now(), error: true }];
+      const msg = err instanceof TypeError
+        ? "Network error: could not reach the server. Check your connection and try again."
+        : err.message;
+      chats[c.id] = [...chats[c.id], { id: uid(), role: "assistant", content: `⚠️ ${msg}`, ts: Date.now(), error: true }];
       save.chats();
       toast("Request failed. See the message in chat.");
     } finally {
