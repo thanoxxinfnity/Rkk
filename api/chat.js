@@ -2,7 +2,7 @@
 // NIM does not send CORS headers, so browsers cannot call it directly.
 // The user's key is forwarded per request and never stored or logged.
 const NIM_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-const MODEL = "meta/llama-3.2-90b-vision-instruct";
+const MODEL = "nvidia/nemotron-3.5-lightning-30b-a3b";
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") {
@@ -21,7 +21,8 @@ module.exports = async (req, res) => {
     temperature: Math.min(Number(body.temperature) || 0.85, 1.2),
     top_p: 0.95,
     max_tokens: Math.min(Number(body.max_tokens) || 700, 1000),
-    stream: false
+    stream: false,
+    chat_template_kwargs: { enable_thinking: false }   // plain replies, no reasoning text
   };
 
   try {

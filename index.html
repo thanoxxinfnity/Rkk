@@ -197,7 +197,7 @@
     <p class="text-[11px] text-[var(--muted)] mt-2 leading-relaxed">
       Stored only in your browser's LocalStorage. Requests go to
       <code class="text-[#c9b8ff]">/api/chat</code> to NVIDIA NIM, model
-      <code class="text-[#c9b8ff]">meta/llama-3.2-90b-vision-instruct</code>. The key is forwarded, never stored on the server.
+      <code class="text-[#c9b8ff]">nvidia/nemotron-3.5-lightning-30b-a3b</code>. The key is forwarded, never stored on the server.
     </p>
     <div class="flex justify-between items-center mt-6">
       <button id="clearKeyBtn" class="btn text-xs text-red-300 hover:text-red-200">Remove key</button>
@@ -281,7 +281,7 @@
   // Calls go through our Vercel function (api/chat.js) because NVIDIA NIM
   // does not allow direct browser requests (no CORS header).
   const API_URL = "/api/chat";
-  const MODEL = "meta/llama-3.2-90b-vision-instruct";
+  const MODEL = "nvidia/nemotron-3.5-lightning-30b-a3b";
   const MAX_HISTORY = 30;          // messages sent to the API per request
   const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
   const KEYS = { chars: "rp.characters", chats: "rp.chats", active: "rp.activeId", apiKey: "rp.apiKey" };
