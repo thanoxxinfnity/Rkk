@@ -28,12 +28,16 @@ module.exports = async (req, res) => {
     const upstream = await fetch(NIM_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: auth },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(50000)            // stay under the 60s function limit
     });
     const text = await upstream.text();
     res.setHeader("Content-Type", "application/json");
     return res.status(upstream.status).send(text);
   } catch (err) {
-    return res.status(502).json({ error: { message: "Could not reach NVIDIA NIM: " + err.message } });
+    const timedOut = err.name === "TimeoutError" || err.name === "AbortError";
+    return res.status(timedOut ? 504 : 502).json({
+      error: { message: timedOut ? "The model took too long to reply. Please try again." : "Could not reach NVIDIA NIM: " + err.message }
+    });
   }
 };
