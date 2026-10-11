@@ -78,12 +78,16 @@
     <button id="bRig" class="on" title="Shortcut 1">1 · Rig</button>
     <button id="bPose" title="Shortcut 2">2 · Pose</button>
     <span class="sep"></span>
-    <button id="bDemo">Demo character</button>
+    <button id="bDemo" title="Demo mesh with a finger rig">Demo character</button>
+    <button id="bFit" title="Build a full humanoid rig (with 30 finger bones) from the loaded mesh">Auto-fit humanoid</button>
     <button id="bImport">Import .glb</button>
     <input type="file" id="fileIn" accept=".glb,.gltf" hidden />
     <span class="sep"></span>
     <button id="bBone" title="Adds a bone, child of the selected one">+ Bone</button>
-    <button id="bDel" title="Delete key">Delete bone</button>
+    <button id="bDel" title="Delete bone">Delete bone</button>
+    <button id="bMirror" title="Copy every L bone (pose or rest) to its R partner">Mirror L→R</button>
+    <label class="muted" style="font-size:12px" title="Weight sharpness: higher = each vertex follows fewer bones">Sharp
+      <input id="wp" type="number" min="0.5" max="4" step="0.5" value="1" style="width:56px" /></label>
     <span class="sep"></span>
     <button id="bExport" title="Downloads a .glb with rig, mesh and animation">Export .glb</button>
     <button id="bNew">New</button>
@@ -96,7 +100,7 @@
     <div class="tip">
       <b>Workflow</b><br/>
       1. Load a model or click <b>Demo character</b>.<br/>
-      2. In <b>Rig</b> mode, add bones and drag them with the gizmo to the joints.<br/>
+      2. Click <b>Auto-fit humanoid</b> (body + 30 finger bones), or add bones yourself. In <b>Rig</b> mode, drag joints with the gizmo.<br/>
       3. Switch to <b>Pose</b> mode. Bones are auto-weighted to the mesh.<br/>
       4. Rotate bones, then press <b>K</b> to keyframe. Move the playhead and key again.<br/>
       5. Press <b>Space</b> to play, then <b>Export .glb</b>.
@@ -210,6 +214,7 @@ let playing = false, playhead = 0, duration = 2;
 let clip = null, action = null;
 let dirty = true;
 let gizmoBusy = false;
+let weightPower = 1;             // weight sharpness: higher = fewer bones per vertex
 
 function requestRender() { dirty = true; }
 
@@ -362,15 +367,40 @@ function mergeAll(list) {
   list.forEach(g => g.dispose());
   return merged;
 }
+function capsule(a, b, r) {
+  const A = new THREE.Vector3(a[0], a[1], a[2]), B = new THREE.Vector3(b[0], b[1], b[2]);
+  const dir = B.clone().sub(A);
+  const len = dir.length();
+  const g = new THREE.CylinderGeometry(r, r, Math.max(len, 1e-4), 8, 1);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), len > 1e-6 ? dir.normalize() : new THREE.Vector3(0, 1, 0)));
+  g.translate((A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2);
+  return g;
+}
+const DEMO = { H: 1.8, minY: 0, cx: 0, cz: 0, halfSpan: 0.98 };   // T-pose proportions
 function demoGeometry() {
-  const parts = [
-    new THREE.BoxGeometry(0.5, 0.7, 0.3).translate(0, 1.1, 0),           // torso
-    new THREE.SphereGeometry(0.18, 20, 14).translate(0, 1.7, 0),         // head
-    new THREE.CylinderGeometry(0.07, 0.07, 0.6, 10).translate(-0.4, 1.1, 0), // left arm
-    new THREE.CylinderGeometry(0.07, 0.07, 0.6, 10).translate(0.4, 1.1, 0),  // right arm
-    new THREE.CylinderGeometry(0.09, 0.09, 0.7, 10).translate(-0.15, 0.4, 0), // left leg
-    new THREE.CylinderGeometry(0.09, 0.09, 0.7, 10).translate(0.15, 0.4, 0),  // right leg
-  ];
+  const { P, L } = humanoidJoints(DEMO);
+  const parts = [];
+  const cap = (a, b, r) => parts.push(capsule(a, b, r));
+  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+  parts.push(new THREE.BoxGeometry(0.34, P.chest[1] - P.hips[1] + 0.1, 0.2).translate(...mid(P.hips, P.chest)));
+  cap(P.neck, P.head, 0.05);
+  parts.push(new THREE.SphereGeometry(0.12, 16, 12).translate(P.head[0], P.head[1] + 0.08, P.head[2]));
+  for (const k of ['L', 'R']) {
+    const sg = k === 'L' ? -1 : 1;
+    cap(P['thigh' + k], P['shin' + k], 0.085);
+    cap(P['shin' + k], P['foot' + k], 0.07);
+    cap(P['foot' + k], P['toe' + k], 0.05);
+    cap(P['upperArm' + k], P['foreArm' + k], 0.055);
+    cap(P['foreArm' + k], P['hand' + k], 0.05);
+    const h = P['hand' + k];
+    cap(h, [h[0] + sg * 0.1, h[1], h[2]], 0.045);            // palm
+    for (const f of FINGERS) {
+      const a = P[`${f}1${k}`], b = P[`${f}2${k}`], c = P[`${f}3${k}`];
+      cap(a, b, 0.014);
+      cap(b, c, 0.013);
+      cap(c, [c[0] + sg * L[`${f}3${k}`], c[1], c[2]], 0.012);
+    }
+  }
   return mergeAll(parts);
 }
 function setMesh(geo) {
@@ -452,7 +482,7 @@ function bindRig() {
       }
     }
     let sum = 0;
-    for (let k = 0; k < 4; k++) { w[k] = bd[k] === Infinity ? 0 : 1 / (bd[k] + 1e-4); sum += w[k]; }
+    for (let k = 0; k < 4; k++) { w[k] = bd[k] === Infinity ? 0 : 1 / Math.pow(bd[k] + 1e-4, weightPower); sum += w[k]; }
     for (let k = 0; k < 4; k++) {
       idx[v * 4 + k] = bj[k];
       wts[v * 4 + k] = sum > 0 ? w[k] / sum : (k === 0 ? 1 : 0);
@@ -607,33 +637,103 @@ function importFile(file) {
   }, undefined, err => { URL.revokeObjectURL(url); toast('Could not load: ' + (err?.message || err)); });
 }
 
-// ---------- demo character with a ready humanoid rig ----------
-const HUMANOID = [ // name, parent, world position, leaf length
-  ['hips', null, [0, 0.8, 0], 0.3],
-  ['spine', 'hips', [0, 1.15, 0], 0.3],
-  ['head', 'spine', [0, 1.45, 0], 0.3],
-  ['armL', 'spine', [-0.4, 1.4, 0], 0.3],
-  ['handL', 'armL', [-0.4, 0.8, 0], 0.2],
-  ['armR', 'spine', [0.4, 1.4, 0], 0.3],
-  ['handR', 'armR', [0.4, 0.8, 0], 0.2],
-  ['legL', 'hips', [-0.15, 0.75, 0], 0.3],
-  ['footL', 'legL', [-0.15, 0.05, 0], 0.1],
-  ['legR', 'hips', [0.15, 0.75, 0], 0.3],
-  ['footR', 'legR', [0.15, 0.05, 0], 0.1],
-];
+// ---------- humanoid skeleton from body proportions (used by auto-fit and the demo) ----------
+const FINGERS = ['thumb', 'index', 'middle', 'ring', 'pinky'];
+const FINGER_Z = [0.45, 0.22, 0, -0.22, -0.4];   // spread across the hand (x hand length)
+const FINGER_SEG = [0.45, 0.3, 0.25];            // share of each finger's length per bone
+function humanoidJoints({ minY, H, cx, cz, halfSpan }) {
+  const P = {}, L = {};                          // P: joint (bone head) positions, L: leaf lengths
+  const y = f => minY + f * H;
+  const sh = 0.12 * H;                            // shoulder offset from the midline
+  const armLen = Math.max(0.3 * H, halfSpan - sh); // shoulder to hand tip (T-pose)
+  const upper = armLen * 0.43, fore = armLen * 0.34, hand = armLen * 0.23;
+  const hipX = 0.09 * H;
+  P.hips = [cx, y(0.52), cz];
+  P.spine = [cx, y(0.62), cz];
+  P.chest = [cx, y(0.72), cz];
+  P.neck = [cx, y(0.82), cz];
+  P.head = [cx, y(0.84), cz]; L.head = 0.14 * H;
+  for (const s of [-1, 1]) {                      // -1 = L (character's left, at -X), +1 = R
+    const k = s < 0 ? 'L' : 'R';
+    P['thigh' + k] = [cx + s * hipX, y(0.50), cz];
+    P['shin' + k] = [cx + s * hipX, y(0.28), cz];
+    P['foot' + k] = [cx + s * hipX, y(0.05), cz];
+    P['toe' + k] = [cx + s * hipX, y(0.03), cz + 0.12 * H]; L['toe' + k] = 0.04 * H;
+    P['upperArm' + k] = [cx + s * sh, y(0.76), cz];
+    P['foreArm' + k] = [cx + s * (sh + upper), y(0.76), cz];
+    P['hand' + k] = [cx + s * (sh + upper + fore), y(0.76), cz];
+    const wr = P['hand' + k];
+    FINGERS.forEach((f, fi) => {
+      const len = hand * (fi === 0 ? 0.6 : 0.8);
+      const z = cz + FINGER_Z[fi] * hand;
+      const j0 = [wr[0] + s * hand * 0.25, wr[1], z];
+      const j1 = [j0[0] + s * FINGER_SEG[0] * len, wr[1], z];
+      const j2 = [j1[0] + s * FINGER_SEG[1] * len, wr[1], z];
+      P[`${f}1${k}`] = j0; P[`${f}2${k}`] = j1; P[`${f}3${k}`] = j2;
+      L[`${f}3${k}`] = FINGER_SEG[2] * len;
+    });
+  }
+  return { P, L };
+}
+// bone order: parents before children. Name suffix L/R marks the side (used by Mirror).
+function humanoidSpec() {
+  const spec = [['hips', null], ['spine', 'hips'], ['chest', 'spine'], ['neck', 'chest'], ['head', 'neck']];
+  for (const k of ['L', 'R']) {
+    spec.push(['thigh' + k, 'hips'], ['shin' + k, 'thigh' + k], ['foot' + k, 'shin' + k], ['toe' + k, 'foot' + k]);
+    spec.push(['upperArm' + k, 'chest'], ['foreArm' + k, 'upperArm' + k], ['hand' + k, 'foreArm' + k]);
+    for (const f of FINGERS) {
+      for (let i = 1; i <= 3; i++) spec.push([`${f}${i}${k}`, i === 1 ? 'hand' + k : `${f}${i - 1}${k}`]);
+    }
+  }
+  return spec;
+}
+function buildRig({ P, L }) {
+  clearRig();
+  for (const [name, parent] of humanoidSpec()) {
+    const p = P[name], pp = parent ? P[parent] : [0, 0, 0];
+    const parentBone = parent ? bones.find(b => b.name === parent) : null;
+    addBone({
+      parent: parentBone, name,
+      pos: [p[0] - pp[0], p[1] - pp[1], p[2] - pp[2]],
+      length: L[name] ?? 0.3, select: false,
+    });
+  }
+  selectBone(bones[0]);
+}
+function autoFitHumanoid({ confirmReplace = true } = {}) {
+  if (!baseGeometry) return toast('Load a mesh first');
+  if (confirmReplace && bones.length && !confirm('Replace the rig with an auto-fit humanoid? Current bones and keyframes will be removed.')) return;
+  if (mode === 'pose') setMode('rig');
+  baseGeometry.computeBoundingBox();
+  const bb = baseGeometry.boundingBox;
+  const size = bb.getSize(new THREE.Vector3());
+  const c = bb.getCenter(new THREE.Vector3());
+  buildRig(humanoidJoints({ minY: bb.min.y, H: size.y, cx: c.x, cz: c.z, halfSpan: size.x / 2 }));
+  toast(`Auto-fit: ${bones.length} bones (body and 30 fingers). Check the joints in Rig mode.`);
+}
 function loadDemo() {
   setMesh(demoGeometry());
-  clearRig();
-  const byName = {}, worldAt = {};
-  for (const [name, parent, p, len] of HUMANOID) {
-    const parentBone = parent ? byName[parent] : null;
-    const pw = parent ? worldAt[parent] : [0, 0, 0];
-    const local = [p[0] - pw[0], p[1] - pw[1], p[2] - pw[2]];
-    byName[name] = addBone({ parent: parentBone, name, pos: local, length: len, select: false });
-    worldAt[name] = p;
+  autoFitHumanoid({ confirmReplace: false });
+  toast('Demo loaded with a finger rig. Press 2 for Pose, then rotate a finger and press K.');
+}
+// mirror L bones onto their R partners (names ending in L and R)
+function mirrorLtoR() {
+  let n = 0;
+  for (const b of bones) {
+    if (!/L$/.test(b.name)) continue;
+    const other = bones.find(x => x.name === b.name.slice(0, -1) + 'R');
+    if (!other) continue;
+    other.position.set(-b.position.x, b.position.y, b.position.z);
+    // mirror across the YZ plane: X rotation is kept, Y and Z flip sign
+    other.quaternion.set(b.quaternion.x, -b.quaternion.y, -b.quaternion.z, b.quaternion.w);
+    if (mode === 'rig') captureRest(other);
+    n++;
   }
-  selectBone(byName.spine);
-  toast('Demo loaded. Press 2 for Pose mode, then rotate a bone and press K.');
+  if (!n) return toast('No L/R pairs found (bone names must end in L and R)');
+  if (mode === 'rig') rigDirty = true;
+  requestRender();
+  refreshUI();
+  toast(`Mirrored ${n} bones from L to R`);
 }
 
 // ---------- UI ----------
@@ -775,6 +875,14 @@ $('dur').addEventListener('change', e => {
 $('bRig').onclick = () => setMode('rig');
 $('bPose').onclick = () => setMode('pose');
 $('bDemo').onclick = loadDemo;
+$('bFit').onclick = () => autoFitHumanoid();
+$('bMirror').onclick = mirrorLtoR;
+$('wp').addEventListener('change', e => {
+  weightPower = THREE.MathUtils.clamp(parseFloat(e.target.value) || 1, 0.5, 4);
+  e.target.value = weightPower;
+  if (mode === 'pose') bindRig(); else rigDirty = true;
+  requestRender();
+});
 $('bImport').onclick = () => $('fileIn').click();
 $('fileIn').addEventListener('change', e => { const f = e.target.files[0]; if (f) importFile(f); e.target.value = ''; });
 $('bBone').onclick = addChildBone;
