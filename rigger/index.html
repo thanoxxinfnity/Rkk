@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27><text y=%27.9em%27 font-size=%2790%27>🦴</text></svg>" />
+<title>Rigger · low-RAM rig and animation</title>
+<style>
+  :root { --bg:#101218; --panel:#171a22; --line:#262b38; --text:#e6e8ef; --muted:#8a90a2; --acc:#7c8cff; --ok:#34d399; --warn:#fbbf24; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); overflow: hidden;
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #app { display: grid; height: 100vh; grid-template-columns: 210px 1fr 250px; grid-template-rows: 46px 1fr 124px; }
+  header { grid-column: 1 / 4; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: var(--panel);
+    border-bottom: 1px solid var(--line); overflow-x: auto; white-space: nowrap; }
+  header .brand { font-weight: 700; margin-right: 6px; }
+  .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; flex-shrink: 0; }
+  .stat { margin-left: auto; color: var(--muted); font-size: 12px; padding-left: 8px; }
+  button { background: #1d2130; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px;
+    cursor: pointer; font: inherit; white-space: nowrap; }
+  button:hover { border-color: #3b4256; }
+  button.on { background: var(--acc); border-color: var(--acc); color: #fff; }
+  button:disabled { opacity: .4; cursor: default; }
+  input, select { background: #0e1017; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px;
+    font: inherit; width: 100%; min-width: 0; }
+  input:focus { outline: 2px solid var(--acc); outline-offset: -1px; }
+  aside { background: var(--panel); overflow-y: auto; padding: 10px; border-right: 1px solid var(--line); }
+  aside.right { border-right: 0; border-left: 1px solid var(--line); }
+  h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 6px 0 8px; }
+  .muted { color: var(--muted); }
+  #boneList { list-style: none; padding: 0; margin: 0; }
+  #boneList button.bone { display: block; width: 100%; text-align: left; border: 0; background: transparent;
+    padding: 5px 8px; border-radius: 6px; color: var(--text); }
+  #boneList button.bone:hover { background: #1d2130; }
+  #boneList button.bone.sel { background: rgba(124,140,255,.22); color: #fff; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .field { display: grid; gap: 3px; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+  .tip { font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 10px; }
+  .tip b { color: var(--text); font-weight: 600; }
+  #stage { position: relative; min-width: 0; min-height: 0; }
+  #view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #modeBadge { position: absolute; left: 10px; top: 10px; padding: 4px 9px; border-radius: 999px; font-size: 12px;
+    background: rgba(0,0,0,.45); border: 1px solid var(--line); pointer-events: none; }
+  footer { grid-column: 1 / 4; background: var(--panel); border-top: 1px solid var(--line); padding: 8px 12px;
+    display: grid; gap: 6px; }
+  .transport { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .transport label { color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; }
+  .transport label input { width: 70px; }
+  #timeLbl { font-variant-numeric: tabular-nums; color: var(--muted); margin-left: auto; font-size: 12px; }
+  #scrub { width: 100%; accent-color: var(--acc); }
+  .ticks { position: relative; height: 10px; }
+  .ticks i { position: absolute; top: 0; width: 3px; height: 10px; border-radius: 2px; background: var(--ok);
+    transform: translateX(-1px); cursor: pointer; }
+  .toast { position: fixed; left: 50%; bottom: 140px; transform: translateX(-50%); background: #232838; border: 1px solid var(--line);
+    padding: 8px 14px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.4); z-index: 9; max-width: 90vw; }
+  @media (max-width: 860px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto auto; height: 100vh; }
+    header { grid-column: 1; }
+    aside { display: none; }
+    footer { grid-column: 1; }
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <span class="brand">🦴 Rigger</span>
+    <button id="bRig" class="on" title="Shortcut 1">1 · Rig</button>
+    <button id="bPose" title="Shortcut 2">2 · Pose</button>
+    <span class="sep"></span>
+    <button id="bDemo">Demo character</button>
+    <button id="bImport">Import .glb</button>
+    <input type="file" id="fileIn" accept=".glb,.gltf" hidden />
+    <span class="sep"></span>
+    <button id="bBone" title="Adds a bone, child of the selected one">+ Bone</button>
+    <button id="bDel" title="Delete key">Delete bone</button>
+    <span class="sep"></span>
+    <button id="bExport" title="Downloads a .glb with rig, mesh and animation">Export .glb</button>
+    <button id="bNew">New</button>
+    <span id="stat" class="stat"></span>
+  </header>
+
+  <aside>
+    <h3>Bones</h3>
+    <ul id="boneList"></ul>
+    <div class="tip">
+      <b>Workflow</b><br/>
+      1. Load a model or click <b>Demo character</b>.<br/>
+      2. In <b>Rig</b> mode, add bones and drag them with the gizmo to the joints.<br/>
+      3. Switch to <b>Pose</b> mode. Bones are auto-weighted to the mesh.<br/>
+      4. Rotate bones, then press <b>K</b> to keyframe. Move the playhead and key again.<br/>
+      5. Press <b>Space</b> to play, then <b>Export .glb</b>.
+    </div>
+  </aside>
+
+  <main id="stage">
+    <canvas id="view"></canvas>
+    <div id="modeBadge">Rig mode · drag bones</div>
+  </main>
+
+  <aside class="right">
+    <h3>Bone</h3>
+    <div id="insEmpty" class="muted">Click a bone (orange dot) to edit it.</div>
+    <div id="ins" hidden>
+      <div class="field">Name
+        <input id="nm" maxlength="40" />
+      </div>
+      <div class="field">Length (for the tail of leaf bones)
+        <input id="ln" type="number" step="0.05" min="0.05" max="3" />
+      </div>
+      <h3>Position</h3>
+      <div class="grid3">
+        <input id="px" type="number" step="0.01" title="X" />
+        <input id="py" type="number" step="0.01" title="Y" />
+        <input id="pz" type="number" step="0.01" title="Z" />
+      </div>
+      <h3>Rotation (degrees)</h3>
+      <div class="grid3">
+        <input id="rx" type="number" step="1" title="X" />
+        <input id="ry" type="number" step="1" title="Y" />
+        <input id="rz" type="number" step="1" title="Z" />
+      </div>
+      <div id="insMode" class="tip"></div>
+      <div class="tip">Gizmo: <b>W</b> move · <b>E</b> rotate · <b>Esc</b> deselect. Shortcut <b>Delete</b> removes the bone and its children.</div>
+    </div>
+  </aside>
+
+  <footer>
+    <div class="transport">
+      <button id="bStop" title="Back to 0">⏮ Stop</button>
+      <button id="bPlay" disabled title="Space">▶ Play</button>
+      <button id="bKey" title="Shortcut K">◆ Key all bones</button>
+      <button id="bDelKey">Delete keys here</button>
+      <label>Length (s) <input id="dur" type="number" min="0.2" max="60" step="0.1" value="2" /></label>
+      <span id="timeLbl">0.00 / 2.00 s</span>
+    </div>
+    <input id="scrub" type="range" min="0" max="2" step="0.01" value="0" />
+    <div id="ticks" class="ticks" title="Keyframes (click to jump)"></div>
+  </footer>
+
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+const $ = id => document.getElementById(id);
+const MAX_VERTS = 200000; // soft limit: warn on low-RAM machines
+
+// ---------- renderer: low memory, draws only when something changed ----------
+const canvas = $('view');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x12141b);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 200);
+camera.position.set(2.6, 1.9, 3.8);
+const orbit = new OrbitControls(camera, canvas);
+orbit.target.set(0, 1, 0);
+orbit.addEventListener('change', requestRender);
+scene.add(new THREE.GridHelper(8, 16, 0x39405a, 0x242936));
+scene.add(new THREE.HemisphereLight(0xffffff, 0x2a2f40, 1.5));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(2, 5, 3);
+scene.add(sun);
+
+// Export group: rig + skinned mesh only (grid, markers, grey preview are not exported)
+const world = new THREE.Group();
+world.name = 'Character';
+const rig = new THREE.Group();
+rig.name = 'Rig';
+world.add(rig);
+scene.add(world);
+const restGroup = new THREE.Group();   // grey preview of the mesh in Rig mode
+scene.add(restGroup);
+const markerGroup = new THREE.Group(); // orange joint dots
+scene.add(markerGroup);
+let helper = null;                     // SkeletonHelper lines
+
+const transform = new TransformControls(camera, canvas);
+transform.setSize(0.8);
+transform.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; gizmoBusy = e.value; });
+transform.addEventListener('objectChange', onGizmoChange);
+scene.add(transform);
+
+// ---------- state ----------
+let bones = [];                 // THREE.Bone[] (order = skin index)
+const keys = new Map();         // bone.uuid -> [{ t, p:[x,y,z], q:[x,y,z,w] }]
+let baseGeometry = null;        // mesh geometry (shared by preview and skinned mesh)
+let restMesh = null;            // grey preview (Rig mode)
+let skinned = null;             // SkinnedMesh (Pose mode, exported)
+let selected = null;
+let mode = 'rig';
+let rigDirty = true;            // bones changed since last bind
+let playing = false, playhead = 0, duration = 2;
+let clip = null, action = null;
+let dirty = true;
+let gizmoBusy = false;
+
+function requestRender() { dirty = true; }
+
+const mixer = new THREE.AnimationMixer(rig);
+
+// ---------- materials and markers (shared, cheap) ----------
+const markerGeo = new THREE.SphereGeometry(0.035, 10, 8);
+const matNormal = new THREE.MeshBasicMaterial({ color: 0xffa726, depthTest: false, transparent: true, opacity: 0.9 });
+const matSelected = new THREE.MeshBasicMaterial({ color: 0x7cffb2, depthTest: false, transparent: true, opacity: 1 });
+function makeMarker(bone) {
+  const m = new THREE.Mesh(markerGeo, matNormal);
+  m.userData.bone = bone;
+  m.renderOrder = 10;
+  markerGroup.add(m);
+  return m;
+}
+function updateMarkers() {
+  for (const m of markerGroup.children) {
+    const b = m.userData.bone;
+    m.position.setFromMatrixPosition(b.matrixWorld);
+    m.material = b === selected ? matSelected : matNormal;
+  }
+}
+function rebuildHelper() {
+  if (helper) { scene.remove(helper); helper.geometry.dispose(); helper.material.dispose(); helper = null; }
+  if (!bones.length) return;
+  helper = new THREE.SkeletonHelper(rig);
+  helper.material.depthTest = false;
+  helper.renderOrder = 9;
+  scene.add(helper);
+}
+
+// ---------- render loop: sleeps when idle ----------
+let lastTs = 0;
+function frame(ts) {
+  requestAnimationFrame(frame);
+  const dt = lastTs ? Math.min((ts - lastTs) / 1000, 0.1) : 0;
+  lastTs = ts;
+  if (playing && clip) {
+    playhead = (playhead + dt) % duration;
+    applyPlayhead();
+    updateTimelineUI();
+  }
+  if (dirty) {
+    dirty = false;
+    scene.updateMatrixWorld();
+    updateMarkers();
+    renderer.render(scene, camera);
+  }
+}
+function resize() {
+  const r = canvas.parentElement.getBoundingClientRect();
+  renderer.setSize(r.width, r.height, false);
+  camera.aspect = r.width / Math.max(1, r.height);
+  camera.updateProjectionMatrix();
+  requestRender();
+}
+window.addEventListener('resize', resize);
+resize();
+requestAnimationFrame(frame);
+
+// ---------- rest pose helpers ----------
+function captureRest(b) { b.userData.rest = { p: b.position.toArray(), q: b.quaternion.toArray() }; }
+function restoreRest(b) {
+  const r = b.userData.rest;
+  if (r) { b.position.fromArray(r.p); b.quaternion.fromArray(r.q); }
+}
+
+// ---------- bones ----------
+function sanitize(s) { return String(s || '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40) || 'bone'; }
+function uniqueName(base, self = null) {
+  const taken = new Set(bones.filter(b => b !== self).map(b => b.name));
+  let name = base, n = 2;
+  while (taken.has(name)) name = `${base}_${n++}`;
+  return name;
+}
+function addBone({ parent = null, name = 'bone', pos = [0, 0, 0], length = 0.3, select = true } = {}) {
+  const b = new THREE.Bone();
+  b.name = uniqueName(sanitize(name));
+  b.position.fromArray(pos);
+  b.userData.length = length;
+  (parent || rig).add(b);
+  bones.push(b);
+  makeMarker(b);
+  captureRest(b);
+  rebuildHelper();
+  rigDirty = true;
+  if (select) selectBone(b); else refreshUI();
+  requestRender();
+  return b;
+}
+function addChildBone() {
+  if (mode !== 'rig') return toast('Switch to Rig mode (1) to add bones');
+  if (selected) addBone({ parent: selected, pos: [0, selected.userData.length ?? 0.3, 0] });
+  else {
+    const roots = rig.children.filter(c => c.isBone).length;
+    addBone({ pos: [roots * 0.4, 0, 0] });
+  }
+}
+function deleteSelected() {
+  if (mode !== 'rig') return toast('Switch to Rig mode (1) to delete bones');
+  if (!selected) return toast('Select a bone first');
+  const doomed = new Set();
+  (function collect(b) { doomed.add(b); b.children.filter(c => c.isBone).forEach(collect); })(selected);
+  bones = bones.filter(b => !doomed.has(b));
+  doomed.forEach(b => keys.delete(b.uuid));
+  for (const m of [...markerGroup.children]) if (doomed.has(m.userData.bone)) markerGroup.remove(m);
+  selected.parent.remove(selected);
+  selected = null;
+  transform.detach();
+  rigDirty = true;
+  rebuildHelper();
+  rebuildClip();
+  refreshUI();
+  requestRender();
+}
+function selectBone(b) {
+  selected = b || null;
+  if (selected) transform.attach(selected); else transform.detach();
+  refreshUI();
+  requestRender();
+}
+function clearRig() {
+  rig.clear();
+  markerGroup.clear();
+  bones = [];
+  keys.clear();
+  selected = null;
+  transform.detach();
+  rebuildHelper();
+  rebuildClip();
+  rigDirty = true;
+}
+
+// ---------- mesh ----------
+function normalizeGeo(g) {
+  // Keep only position, normal, uv. Drop skin data, colors, tangents to save RAM.
+  const out = new THREE.BufferGeometry();
+  const pos = g.getAttribute('position');
+  out.setAttribute('position', pos.clone());
+  const uv = g.getAttribute('uv');
+  out.setAttribute('uv', uv ? uv.clone() : new THREE.Float32BufferAttribute(new Float32Array(pos.count * 2), 2));
+  if (g.index) out.setIndex(g.index.clone());
+  const n = g.getAttribute('normal');
+  if (n) out.setAttribute('normal', n.clone()); else out.computeVertexNormals();
+  return out;
+}
+function mergeAll(list) {
+  const merged = mergeGeometries(list, false);
+  list.forEach(g => g.dispose());
+  return merged;
+}
+function demoGeometry() {
+  const parts = [
+    new THREE.BoxGeometry(0.5, 0.7, 0.3).translate(0, 1.1, 0),           // torso
+    new THREE.SphereGeometry(0.18, 20, 14).translate(0, 1.7, 0),         // head
+    new THREE.CylinderGeometry(0.07, 0.07, 0.6, 10).translate(-0.4, 1.1, 0), // left arm
+    new THREE.CylinderGeometry(0.07, 0.07, 0.6, 10).translate(0.4, 1.1, 0),  // right arm
+    new THREE.CylinderGeometry(0.09, 0.09, 0.7, 10).translate(-0.15, 0.4, 0), // left leg
+    new THREE.CylinderGeometry(0.09, 0.09, 0.7, 10).translate(0.15, 0.4, 0),  // right leg
+  ];
+  return mergeAll(parts);
+}
+function setMesh(geo) {
+  if (mode === 'pose') setMode('rig');
+  if (restMesh) { restGroup.remove(restMesh); restMesh.material.dispose(); }
+  if (skinned) { world.remove(skinned); skinned.material.dispose(); }
+  if (baseGeometry && baseGeometry !== geo) baseGeometry.dispose();
+  baseGeometry = geo;
+  restMesh = new THREE.Mesh(baseGeometry, new THREE.MeshStandardMaterial({
+    color: 0x7d88a8, roughness: 0.7, transparent: true, opacity: 0.5, depthWrite: false }));
+  skinned = new THREE.SkinnedMesh(baseGeometry, new THREE.MeshStandardMaterial({ color: 0x9aa8d6, roughness: 0.55, metalness: 0.05 }));
+  skinned.name = 'Mesh';
+  skinned.frustumCulled = false;
+  skinned.visible = false;
+  world.add(skinned);
+  restGroup.add(restMesh);
+  rigDirty = true;
+  fitCamera(baseGeometry);
+  refreshUI();
+  requestRender();
+}
+function fitCamera(geo) {
+  geo.computeBoundingBox();
+  const box = geo.boundingBox;
+  const c = box.getCenter(new THREE.Vector3());
+  const size = Math.max(0.5, box.getSize(new THREE.Vector3()).length());
+  orbit.target.copy(c);
+  camera.position.copy(c).add(new THREE.Vector3(size * 0.6, size * 0.3, size * 1.2));
+  camera.near = size * 0.01;
+  camera.far = size * 40;
+  camera.updateProjectionMatrix();
+}
+
+// ---------- auto-weights: each vertex follows the 4 nearest bone segments ----------
+function segmentsAtRest() {
+  rig.updateMatrixWorld(true);
+  const out = new Float64Array(bones.length * 6);
+  const h = new THREE.Vector3(), t = new THREE.Vector3(), pp = new THREE.Vector3();
+  bones.forEach((b, i) => {
+    h.setFromMatrixPosition(b.matrixWorld);
+    const child = b.children.find(c => c.isBone);
+    if (child) t.setFromMatrixPosition(child.matrixWorld);
+    else {
+      if (b.parent && b.parent.isBone) { pp.setFromMatrixPosition(b.parent.matrixWorld); t.subVectors(h, pp); }
+      else t.set(0, 1, 0);
+      if (t.lengthSq() < 1e-8) t.set(0, 1, 0);
+      t.normalize().multiplyScalar(b.userData.length ?? 0.3).add(h);
+    }
+    out.set([h.x, h.y, h.z, t.x, t.y, t.z], i * 6);
+  });
+  return out;
+}
+function distSqPointSegment(px, py, pz, s, i) {
+  const ax = s[i], ay = s[i + 1], az = s[i + 2];
+  const abx = s[i + 3] - ax, aby = s[i + 4] - ay, abz = s[i + 5] - az;
+  const apx = px - ax, apy = py - ay, apz = pz - az;
+  const len2 = abx * abx + aby * aby + abz * abz;
+  let t = len2 > 0 ? (apx * abx + apy * aby + apz * abz) / len2 : 0;
+  t = Math.min(1, Math.max(0, t));
+  const dx = apx - abx * t, dy = apy - aby * t, dz = apz - abz * t;
+  return dx * dx + dy * dy + dz * dz;
+}
+function bindRig() {
+  if (!baseGeometry || !bones.length) return false;
+  const seg = segmentsAtRest();
+  const pos = baseGeometry.getAttribute('position');
+  const n = pos.count, S = bones.length;
+  const idx = new Uint16Array(n * 4), wts = new Float32Array(n * 4);
+  const bd = new Float64Array(4), bj = new Int32Array(4), w = new Float64Array(4);
+  for (let v = 0; v < n; v++) {
+    const px = pos.getX(v), py = pos.getY(v), pz = pos.getZ(v);
+    bd.fill(Infinity); bj.fill(0);
+    for (let s = 0; s < S; s++) {
+      const d = distSqPointSegment(px, py, pz, seg, s * 6);
+      if (d < bd[3]) {
+        let k = 3;
+        while (k > 0 && bd[k - 1] > d) { bd[k] = bd[k - 1]; bj[k] = bj[k - 1]; k--; }
+        bd[k] = d; bj[k] = s;
+      }
+    }
+    let sum = 0;
+    for (let k = 0; k < 4; k++) { w[k] = bd[k] === Infinity ? 0 : 1 / (bd[k] + 1e-4); sum += w[k]; }
+    for (let k = 0; k < 4; k++) {
+      idx[v * 4 + k] = bj[k];
+      wts[v * 4 + k] = sum > 0 ? w[k] / sum : (k === 0 ? 1 : 0);
+    }
+  }
+  baseGeometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(idx, 4));
+  baseGeometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(wts, 4));
+  const skeleton = new THREE.Skeleton(bones); // inverses taken from this rest pose
+  skinned.bind(skeleton, new THREE.Matrix4());
+  rigDirty = false;
+  return true;
+}
+
+// ---------- modes ----------
+function setMode(next) {
+  if (next === mode) return;
+  if (next === 'pose') {
+    if (!bones.length) return toast('Add bones first (Demo character or + Bone)');
+    if (!baseGeometry) return toast('Load a mesh first');
+    bones.forEach(captureRest);
+    if (!bindRig()) return toast('Could not bind the mesh');
+    mode = 'pose';
+    skinned.visible = true;
+    restMesh.visible = false;
+    transform.setMode('rotate');
+    transform.setSpace('local');
+  } else {
+    playing = false;
+    bones.forEach(restoreRest);
+    mode = 'rig';
+    if (skinned) skinned.visible = false;
+    if (restMesh) restMesh.visible = true;
+    transform.setMode('translate');
+    transform.setSpace('world');
+    applyPlayhead();
+  }
+  refreshUI();
+  requestRender();
+}
+
+// ---------- keyframes and clip ----------
+function keyAll() {
+  if (mode !== 'pose') return toast('Switch to Pose mode (2) to keyframe');
+  if (!bones.length) return;
+  const t = Math.round(playhead * 1000) / 1000;
+  for (const b of bones) {
+    let arr = keys.get(b.uuid);
+    if (!arr) { arr = []; keys.set(b.uuid, arr); }
+    const data = { t, p: b.position.toArray(), q: b.quaternion.toArray() };
+    const i = arr.findIndex(k => Math.abs(k.t - t) < 1e-3);
+    if (i >= 0) arr[i] = data; else arr.push(data);
+  }
+  rebuildClip();
+  toast(`Keyed ${bones.length} bones at ${t.toFixed(2)} s`);
+}
+function deleteKeysHere() {
+  const t = playhead;
+  let removed = 0;
+  for (const [uuid, arr] of keys) {
+    const kept = arr.filter(k => Math.abs(k.t - t) >= 1e-3);
+    removed += arr.length - kept.length;
+    keys.set(uuid, kept);
+  }
+  rebuildClip();
+  toast(removed ? `Deleted ${removed} keys` : 'No key at this time');
+}
+function rebuildClip() {
+  const tracks = [];
+  for (const b of bones) {
+    const arr = keys.get(b.uuid);
+    if (!arr || !arr.length) continue;
+    const sorted = [...arr].sort((x, y) => x.t - y.t);
+    const times = sorted.map(k => k.t);
+    tracks.push(new THREE.VectorKeyframeTrack(`${b.name}.position`, times, sorted.flatMap(k => k.p)));
+    tracks.push(new THREE.QuaternionKeyframeTrack(`${b.name}.quaternion`, times, sorted.flatMap(k => k.q)));
+  }
+  if (action) { action.stop(); mixer.uncacheClip(clip); action = null; }
+  clip = tracks.length ? new THREE.AnimationClip('Take', duration, tracks) : null;
+  if (clip) {
+    action = mixer.clipAction(clip);
+    action.setLoop(THREE.LoopRepeat);
+    action.play();
+    action.paused = true;
+  }
+  applyPlayhead();
+  renderTicks();
+  refreshUI();
+}
+function applyPlayhead() {
+  if (action) { action.time = playhead; mixer.update(0); }
+  requestRender();
+}
+function togglePlay() {
+  if (mode !== 'pose') return toast('Switch to Pose mode (2) to play');
+  if (!clip) return toast('Key a pose first (K)');
+  playing = !playing;
+  if (action) action.paused = !playing;
+  refreshUI();
+}
+function stopPlay() {
+  playing = false;
+  playhead = 0;
+  applyPlayhead();
+  refreshUI();
+}
+
+// ---------- export ----------
+function exportGLB() {
+  if (!skinned || !bones.length) return toast('Need a mesh and at least one bone');
+  if (mode !== 'rig') setMode('rig');  // export the rest pose
+  if (rigDirty) bindRig();             // weights match current bone positions
+  const exporter = new GLTFExporter();
+  toast('Exporting…');
+  exporter.parse(world, result => {
+    const blob = new Blob([result], { type: 'model/gltf-binary' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'rigged-character.glb';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    toast(`Exported ${(blob.size / 1024).toFixed(0)} KB`);
+  }, err => toast('Export failed: ' + (err?.message || err)),
+  { binary: true, onlyVisible: false, animations: clip ? [clip] : [] });
+}
+
+// ---------- import ----------
+function importFile(file) {
+  const url = URL.createObjectURL(file);
+  toast('Loading model…');
+  new GLTFLoader().load(url, gltf => {
+    URL.revokeObjectURL(url);
+    gltf.scene.updateMatrixWorld(true);
+    let parts = [];
+    gltf.scene.traverse(o => {
+      if (o.isMesh && o.geometry) {
+        const g = o.geometry.clone();
+        g.applyMatrix4(o.matrixWorld);
+        parts.push(normalizeGeo(g));
+      }
+    });
+    if (!parts.length) return toast('No mesh found in this file');
+    if (parts.length > 1 && parts.some(g => g.index) && !parts.every(g => g.index)) {
+      parts = parts.map(g => g.index ? g.toNonIndexed() : g);
+    }
+    const total = parts.reduce((s, g) => s + g.getAttribute('position').count, 0);
+    const geo = parts.length === 1 ? parts[0] : mergeAll(parts);
+    if (!geo) return toast('Could not merge the meshes in this file');
+    setMesh(geo);
+    toast(total > MAX_VERTS
+      ? `Loaded, but it is heavy (${total.toLocaleString()} vertices). Low-RAM PCs may lag.`
+      : `Loaded ${parts.length} mesh(es). Now add bones or click Demo.`);
+  }, undefined, err => { URL.revokeObjectURL(url); toast('Could not load: ' + (err?.message || err)); });
+}
+
+// ---------- demo character with a ready humanoid rig ----------
+const HUMANOID = [ // name, parent, world position, leaf length
+  ['hips', null, [0, 0.8, 0], 0.3],
+  ['spine', 'hips', [0, 1.15, 0], 0.3],
+  ['head', 'spine', [0, 1.45, 0], 0.3],
+  ['armL', 'spine', [-0.4, 1.4, 0], 0.3],
+  ['handL', 'armL', [-0.4, 0.8, 0], 0.2],
+  ['armR', 'spine', [0.4, 1.4, 0], 0.3],
+  ['handR', 'armR', [0.4, 0.8, 0], 0.2],
+  ['legL', 'hips', [-0.15, 0.75, 0], 0.3],
+  ['footL', 'legL', [-0.15, 0.05, 0], 0.1],
+  ['legR', 'hips', [0.15, 0.75, 0], 0.3],
+  ['footR', 'legR', [0.15, 0.05, 0], 0.1],
+];
+function loadDemo() {
+  setMesh(demoGeometry());
+  clearRig();
+  const byName = {}, worldAt = {};
+  for (const [name, parent, p, len] of HUMANOID) {
+    const parentBone = parent ? byName[parent] : null;
+    const pw = parent ? worldAt[parent] : [0, 0, 0];
+    const local = [p[0] - pw[0], p[1] - pw[1], p[2] - pw[2]];
+    byName[name] = addBone({ parent: parentBone, name, pos: local, length: len, select: false });
+    worldAt[name] = p;
+  }
+  selectBone(byName.spine);
+  toast('Demo loaded. Press 2 for Pose mode, then rotate a bone and press K.');
+}
+
+// ---------- UI ----------
+function renderBoneList() {
+  const ul = $('boneList');
+  ul.innerHTML = '';
+  if (!bones.length) { ul.innerHTML = '<li class="muted" style="padding:6px 8px">No bones yet</li>'; return; }
+  const walk = (obj, depth) => {
+    obj.children.filter(c => c.isBone).forEach(b => {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.className = 'bone' + (b === selected ? ' sel' : '');
+      btn.style.paddingLeft = (8 + depth * 14) + 'px';
+      btn.dataset.idx = bones.indexOf(b);
+      btn.textContent = b.name;
+      li.appendChild(btn);
+      ul.appendChild(li);
+      walk(b, depth + 1);
+    });
+  };
+  walk(rig, 0);
+}
+function renderInspector() {
+  const b = selected;
+  $('insEmpty').hidden = !!b;
+  $('ins').hidden = !b;
+  if (!b) return;
+  const deg = THREE.MathUtils.radToDeg;
+  $('nm').value = b.name;
+  $('ln').value = (b.userData.length ?? 0.3).toFixed(2);
+  $('px').value = b.position.x.toFixed(3);
+  $('py').value = b.position.y.toFixed(3);
+  $('pz').value = b.position.z.toFixed(3);
+  $('rx').value = deg(b.rotation.x).toFixed(1);
+  $('ry').value = deg(b.rotation.y).toFixed(1);
+  $('rz').value = deg(b.rotation.z).toFixed(1);
+  $('insMode').textContent = mode === 'rig'
+    ? 'Editing the rest pose (Rig mode).'
+    : `Editing the pose at ${playhead.toFixed(2)} s (Pose mode).`;
+}
+function renderTicks() {
+  const times = new Set();
+  for (const arr of keys.values()) for (const k of arr) times.add(k.t);
+  $('ticks').innerHTML = [...times].sort((a, b) => a - b)
+    .map(t => `<i style="left:${Math.min(100, (t / duration) * 100)}%" data-t="${t}" title="${t.toFixed(2)} s"></i>`).join('');
+}
+function updateTimelineUI() {
+  $('scrub').max = duration;
+  $('scrub').value = playhead;
+  $('timeLbl').textContent = `${playhead.toFixed(2)} / ${duration.toFixed(2)} s`;
+}
+function refreshUI() {
+  $('bRig').classList.toggle('on', mode === 'rig');
+  $('bPose').classList.toggle('on', mode === 'pose');
+  $('modeBadge').textContent = (mode === 'rig' ? 'Rig mode · drag bones' : 'Pose mode · rotate bones, press K') + (playing ? ' · playing' : '');
+  $('bPlay').textContent = playing ? '❚❚ Pause' : '▶ Play';
+  $('bPlay').disabled = !clip;
+  $('bKey').disabled = mode !== 'pose' || !bones.length;
+  $('bExport').disabled = !skinned || !bones.length;
+  const keyCount = [...keys.values()].reduce((s, a) => s + a.length, 0);
+  const verts = baseGeometry ? baseGeometry.getAttribute('position').count : 0;
+  $('stat').textContent = `${bones.length} bones · ${verts.toLocaleString()} verts · ${keyCount} keys · ${mode}`;
+  renderBoneList();
+  renderInspector();
+  updateTimelineUI();
+}
+function toast(msg) {
+  let t = document.querySelector('.toast');
+  if (!t) { t = document.createElement('div'); t.className = 'toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.remove(), 3000);
+}
+
+// inspector edits
+function afterFieldEdit() {
+  if (mode === 'rig') { captureRest(selected); rigDirty = true; }
+  requestRender();
+  refreshUI();
+}
+function onGizmoChange() {
+  if (!selected) return;
+  if (mode === 'rig') { captureRest(selected); rigDirty = true; }
+  requestRender();
+  refreshUI();
+}
+$('nm').addEventListener('change', e => {
+  if (!selected) return;
+  selected.name = uniqueName(sanitize(e.target.value), selected);
+  rebuildClip();
+  refreshUI();
+});
+$('ln').addEventListener('change', e => {
+  if (!selected) return;
+  selected.userData.length = THREE.MathUtils.clamp(parseFloat(e.target.value) || 0.3, 0.05, 3);
+  if (mode === 'rig') captureRest(selected);
+  rigDirty = true;
+  requestRender();
+  refreshUI();
+});
+['px', 'py', 'pz'].forEach((id, i) => $(id).addEventListener('change', e => {
+  if (!selected) return;
+  selected.position.setComponent(i, parseFloat(e.target.value) || 0);
+  afterFieldEdit();
+}));
+['rx', 'ry', 'rz'].forEach((id, i) => $(id).addEventListener('change', e => {
+  if (!selected) return;
+  const axis = ['x', 'y', 'z'][i];
+  selected.rotation[axis] = THREE.MathUtils.degToRad(parseFloat(e.target.value) || 0);
+  afterFieldEdit();
+}));
+
+$('boneList').addEventListener('click', e => {
+  const btn = e.target.closest('button.bone');
+  if (btn) selectBone(bones[Number(btn.dataset.idx)]);
+});
+$('ticks').addEventListener('click', e => {
+  const t = Number(e.target.dataset.t);
+  if (Number.isNaN(t) || e.target.tagName !== 'I') return;
+  playing = false;
+  playhead = t;
+  applyPlayhead();
+  refreshUI();
+});
+$('scrub').addEventListener('input', e => {
+  playing = false;
+  playhead = Number(e.target.value);
+  applyPlayhead();
+  refreshUI();
+});
+$('dur').addEventListener('change', e => {
+  duration = THREE.MathUtils.clamp(parseFloat(e.target.value) || 2, 0.2, 60);
+  e.target.value = duration;
+  playhead = Math.min(playhead, duration);
+  rebuildClip();
+});
+
+// toolbar
+$('bRig').onclick = () => setMode('rig');
+$('bPose').onclick = () => setMode('pose');
+$('bDemo').onclick = loadDemo;
+$('bImport').onclick = () => $('fileIn').click();
+$('fileIn').addEventListener('change', e => { const f = e.target.files[0]; if (f) importFile(f); e.target.value = ''; });
+$('bBone').onclick = addChildBone;
+$('bDel').onclick = deleteSelected;
+$('bExport').onclick = exportGLB;
+$('bNew').onclick = () => {
+  if (!confirm('Clear the mesh, bones and keyframes?')) return;
+  setMode('rig');
+  clearRig();
+  if (restMesh) { restGroup.remove(restMesh); restMesh.material.dispose(); restMesh = null; }
+  if (skinned) { world.remove(skinned); skinned.material.dispose(); skinned = null; }
+  if (baseGeometry) { baseGeometry.dispose(); baseGeometry = null; }
+  playhead = 0; duration = 2; $('dur').value = 2;
+  refreshUI(); requestRender();
+};
+$('bPlay').onclick = togglePlay;
+$('bStop').onclick = stopPlay;
+$('bKey').onclick = keyAll;
+$('bDelKey').onclick = deleteKeysHere;
+
+// viewport picking: click a joint dot to select; click empty space to deselect
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+let downAt = null;
+canvas.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointerup', e => {
+  if (!downAt || gizmoBusy) return;
+  const moved = Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]);
+  downAt = null;
+  if (moved > 5) return;
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hits = ray.intersectObjects(markerGroup.children, false);
+  selectBone(hits.length ? hits[0].object.userData.bone : null);
+});
+
+// keyboard shortcuts (ignored while typing in a field)
+window.addEventListener('keydown', e => {
+  if (e.target.matches('input, select, textarea')) return;
+  if (e.key === '1') setMode('rig');
+  else if (e.key === '2') setMode('pose');
+  else if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  else if (e.key === 'k' || e.key === 'K') keyAll();
+  else if (e.key === 'w' || e.key === 'W') transform.setMode('translate');
+  else if (e.key === 'e' || e.key === 'E') transform.setMode('rotate');
+  else if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
+  else if (e.key === 'Escape') selectBone(null);
+});
+
+// debugging hook for automated tests (read-only snapshot)
+window.__rigger = {
+  get state() { return { mode, bones: bones.map(b => b.name), keys: [...keys.values()].reduce((s, a) => s + a.length, 0), playhead, duration, hasClip: !!clip }; },
+  boneQuat(name) { const b = bones.find(x => x.name === name); return b ? b.quaternion.toArray() : null; },
+  setPlayhead(t) { playing = false; playhead = t; applyPlayhead(); },
+};
+
+refreshUI();
+</script>
+</body>
+</html>
