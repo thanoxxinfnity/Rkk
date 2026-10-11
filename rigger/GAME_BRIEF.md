@@ -30,23 +30,23 @@ Use these names. The game code should look bones up by name, never by index.
 
 The `L` and `R` suffixes are the side. The `1`, `2`, `3` numbers are the joint order from the knuckle to the tip. A custom rig can use other names. Then the game should read the names from the file, not assume these.
 
-## 3. What to build
+## 3. What to build (Godot 4)
 
-Target: a three.js game that runs in the browser, unless the user names another engine. Ask the user once if unsure.
+The game engine is **Godot 4** (GDScript). A tested example is in `godot/` (read `godot/README.md` first). It shows how to import the `.glb`, play the clip, drive bones from code, and attach items to a hand.
 
-1. **Loader.** Load a `.glb` with `GLTFLoader`. Find the `SkinnedMesh`, the `Rig`, and the clip named `Take`. Keep the clip; if there are several files, merge them into one `AnimationClip` set keyed by name (`idle`, `walk`, ...).
-2. **Animation.** Use `AnimationMixer` on the loaded scene. Play one clip at a time. Crossfade between clips over about 0.2 s with `action.crossFadeTo`. Do not loop a clip that is meant to play once.
-3. **Controller.** A small state machine: `idle`, `walk`, `run`, `jump`, `attack`. Map keyboard keys (WASD and arrows) to movement. Rotate the character to face the move direction. Keep the camera behind the character.
-4. **Finger control (optional).** Finger bones can be animated separately: add a layer that rotates `index1L`... with simple curl values, on top of the body clip.
-5. **Mirror.** For a left-only animation, reuse it for the right side by flipping: `position.x` negated, and for quaternions `(x, -y, -z, w)`. Use this only when the user asks.
-6. **Performance (low-RAM target).** Keep character meshes under 50,000 vertices. Share one geometry and material per character type. Render only when something changes, or use a fixed 30 fps cap. Dispose of unused assets.
+1. **Import.** Copy each Rigger `.glb` into `res://characters/`. Godot makes a `Skeleton3D`, a skinned `MeshInstance3D`, and an `AnimationPlayer` with the clip `Take`. Build a character scene: `CharacterBody3D` with a `CollisionShape3D` and the inherited model.
+2. **Animation.** One clip per file, named `Take`. Rename clips (`idle`, `walk`, `run`, `attack`) in Advanced Import Settings and turn looping on for idle, walk and run. Use an `AnimationTree` with a state machine to blend them.
+3. **Controller.** A `CharacterBody3D` script: WASD or arrows to move, jump, face the move direction, third-person camera. If the model walks backwards, rotate it 180° around Y (glTF faces +Z, Godot forward is -Z).
+4. **Bones from code.** Look bones up by name with `skeleton.find_bone("handR")`. Use `BoneAttachment3D` for weapons and items. Control fingers with `set_bone_pose_rotation`, with the animation paused or on other bones.
+5. **Mirror (optional).** To reuse a left-side animation on the right, mirror the pose: negate `position.x`, and for quaternions use `(x, -y, -z, w)`.
+6. **Performance (low-end PC).** Keep character meshes under 50,000 vertices. Use the Compatibility renderer if the GPU is old (`godot/project.godot` already does).
 
 ## 4. Rules
 
 - Do not edit the Rigger tool (`rigger/`). Put the game in its own folder (for example `game/`). To run Rigger, see `rigger/RUN_ME.md`.
 - Keep the bone names listed above as the contract. If a name changes in the rig, update the game in the same change.
-- Test with a local server, not with `file://`: `python -m http.server 8000` in the game folder, then open http://localhost:8000.
-- Keep the code in plain modules (ES modules with an import map to three.js CDN, same as Rigger). Do not add a build step unless the user asks.
+- Test in the Godot editor (F5) or headless: `godot --headless --path <game folder> --quit-after 60`.
+- Write GDScript with static types. Keep scripts small and one per scene.
 - Do not put API keys or tokens in the repo.
 
 ## 5. Acceptance checklist
@@ -55,5 +55,5 @@ Target: a three.js game that runs in the browser, unless the user names another 
 - [ ] The `Take` clip plays and loops on the character.
 - [ ] Walk and idle switch with a crossfade, with no snapping.
 - [ ] All 49 bones resolve by name (log a warning for any missing name).
-- [ ] Runs at a steady frame rate on a basic laptop (test with Chrome's Performance panel).
-- [ ] The README in `game/` says how to start the game with the terminal command above.
+- [ ] Runs at a steady frame rate on a basic laptop (check the Godot Profiler / Monitors).
+- [ ] The game's README says how to open it in Godot and which keys to press.
