@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rigger · rig and animate 3D characters</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27><rect width=%27100%27 height=%27100%27 rx=%2722%27 fill=%27%237c8cff%27/><text x=%2750%27 y=%2772%27 font-size=%2760%27 text-anchor=%27middle%27>🦴</text></svg>" />
+<style>
+  :root {
+    --bg: #0d0f15; --panel: #141720; --panel2: #1a1e2a; --line: #262b3a; --line2: #333a4e;
+    --text: #e8eaf2; --muted: #8b92a8; --acc: #7c8cff; --acc2: #a78bfa; --ok: #34d399; --warn: #fbbf24; --bad: #f87171;
+    --left: #4fc3f7; --right: #ff6b81; --center: #ffa726;
+    --r: 10px; --lw: 240px; --rw: 290px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); overflow: hidden;
+    font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  [hidden] { display: none !important; }
+  #app { display: grid; height: 100vh; grid-template-columns: var(--lw) minmax(0, 1fr) var(--rw); grid-template-rows: auto minmax(0, 1fr) auto; }
+
+  /* ---------- buttons and fields ---------- */
+  button { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line2); border-radius: 8px;
+    padding: 7px 12px; min-height: 32px; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s, transform .1s; }
+  button:hover:not(:disabled) { background: #232838; border-color: #465071; }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: .38; cursor: default; }
+  button.primary { background: linear-gradient(135deg, var(--acc), var(--acc2)); border-color: transparent; color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.1); background: linear-gradient(135deg, var(--acc), var(--acc2)); }
+  button.ghost { background: transparent; }
+  button.danger:hover:not(:disabled) { border-color: var(--bad); color: #fecaca; }
+  :focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+  input, select { font: inherit; color: var(--text); background: #0b0d13; border: 1px solid var(--line2); border-radius: 7px;
+    padding: 6px 8px; width: 100%; min-width: 0; min-height: 32px; }
+  input:focus { outline: 2px solid var(--acc); outline-offset: -1px; }
+
+  /* ---------- header ---------- */
+  header { grid-column: 1 / 4; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 12px;
+    background: var(--panel); border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; letter-spacing: .01em; }
+  .brand i { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; font-style: normal;
+    background: linear-gradient(135deg, var(--acc), var(--acc2)); font-size: 15px; }
+  .seg { display: flex; padding: 3px; gap: 3px; background: #0b0d13; border: 1px solid var(--line); border-radius: 10px; }
+  .seg button { border: 0; background: transparent; min-height: 30px; padding: 5px 16px; font-weight: 600; color: var(--muted); }
+  .seg button:hover:not(:disabled) { background: #1b2030; color: var(--text); }
+  .seg button.on { background: var(--acc); color: #fff; }
+  .group { display: flex; align-items: center; gap: 6px; padding-left: 14px; border-left: 1px solid var(--line); }
+  .group .gl { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-right: 2px; }
+  .spacer { flex: 1; }
+  .only-small { display: none; }
+
+  /* ---------- side panels ---------- */
+  aside { background: var(--panel); min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+  aside.right { border-right: 0; border-left: 1px solid var(--line); overflow-y: auto; }
+  .ph { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 8px; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  .count { background: var(--panel2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--text); letter-spacing: 0; }
+  .search { padding: 0 12px 8px; }
+  #boneList { list-style: none; margin: 0; padding: 0 6px 8px; overflow-y: auto; flex: 1; min-height: 0; }
+  #boneList li.row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin: 1px 0; border-radius: 7px; cursor: pointer; }
+  #boneList li.row:hover { background: var(--panel2); }
+  #boneList li.row.sel { background: rgba(124,140,255,.2); box-shadow: inset 2px 0 0 var(--acc); color: #fff; }
+  #boneList li.empty { padding: 16px 10px; color: var(--muted); line-height: 1.6; }
+  .caret { width: 14px; text-align: center; color: var(--muted); font-size: 11px; flex-shrink: 0; cursor: pointer; user-select: none; }
+  .dotc { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--center); }
+  .dotc.l { background: var(--left); } .dotc.r { background: var(--right); }
+  .legend { display: flex; gap: 12px; padding: 8px 14px 12px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); }
+  .legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--center); }
+  .legend .l::before { background: var(--left); } .legend .r::before { background: var(--right); }
+  details.help { margin: 0 12px 12px; font-size: 12px; color: var(--muted); }
+  details.help summary { cursor: pointer; color: var(--text); padding: 6px 0; }
+  details.help ol { margin: 4px 0 0; padding-left: 18px; line-height: 1.6; }
+  .card { margin: 0 12px 12px; padding: 12px; background: var(--panel2); border: 1px solid var(--line); border-radius: var(--r); }
+  .card h4 { margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 600; }
+  .field { display: grid; gap: 4px; margin-bottom: 10px; font-size: 12px; color: var(--muted); }
+  .xyz { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .xyz label { position: relative; display: block; }
+  .xyz label b { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font-size: 10px; pointer-events: none; }
+  .xyz label:nth-child(1) b { color: #f87171; } .xyz label:nth-child(2) b { color: #4ade80; } .xyz label:nth-child(3) b { color: #60a5fa; }
+  .xyz input { padding-left: 17px; padding-right: 4px; font-size: 12px; }
+  .tip { font-size: 12px; color: var(--muted); line-height: 1.55; }
+  .tip b { color: var(--text); font-weight: 600; }
+  kbd { background: #0b0d13; border: 1px solid var(--line2); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; font: 11px ui-monospace, Menlo, monospace; color: var(--text); }
+  .placeholder { padding: 24px 12px; text-align: center; color: var(--muted); line-height: 1.6; }
+  .placeholder .big { font-size: 26px; opacity: .6; }
+
+  /* ---------- viewport ---------- */
+  #stage { position: relative; min-width: 0; min-height: 0; background: #0d1018; }
+  #stage.drop::after { content: "Drop your .glb file here"; position: absolute; inset: 10px; display: grid; place-items: center; font-size: 18px; font-weight: 600;
+    border: 2px dashed var(--acc); border-radius: 14px; background: rgba(124,140,255,.12); z-index: 5; pointer-events: none; }
+  #view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .badge { position: absolute; left: 12px; top: 12px; padding: 6px 12px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em;
+    background: rgba(13,15,21,.75); border: 1px solid var(--line2); pointer-events: none; backdrop-filter: blur(6px); }
+  .badge.rig { color: #bfc7ff; } .badge.pose { color: #86efac; border-color: rgba(52,211,153,.5); }
+  #stat { position: absolute; right: 12px; bottom: 12px; padding: 4px 10px; font-size: 11px; color: var(--muted); background: rgba(13,15,21,.75);
+    border: 1px solid var(--line); border-radius: 999px; pointer-events: none; }
+  #hints { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; gap: 12px; padding: 5px 12px; font-size: 11px; color: var(--muted);
+    background: rgba(13,15,21,.75); border: 1px solid var(--line); border-radius: 999px; pointer-events: none; white-space: nowrap; }
+  .tools3d { position: absolute; right: 12px; top: 12px; display: flex; gap: 6px; }
+  .welcome { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; z-index: 3; pointer-events: none; }
+  .welcome .box { pointer-events: auto; max-width: 520px; text-align: center; padding: 28px 28px 24px; border-radius: 18px;
+    background: rgba(20,23,32,.92); border: 1px solid var(--line2); box-shadow: 0 30px 80px rgba(0,0,0,.5); }
+  .welcome h1 { margin: 0 0 6px; font-size: 22px; }
+  .welcome p { margin: 0 0 18px; color: var(--muted); font-size: 14px; }
+  .welcome .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .welcome button { padding: 10px 18px; font-size: 14px; }
+  .steps { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 18px; font-size: 12px; color: var(--muted); }
+  .steps span { background: var(--panel2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; }
+  .steps b { color: var(--acc); }
+
+  /* ---------- timeline ---------- */
+  footer { grid-column: 1 / 4; background: var(--panel); border-top: 1px solid var(--line); padding: 10px 14px 8px; display: grid; gap: 6px; }
+  .transport { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .transport label { color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; }
+  .transport label input { width: 68px; }
+  #timeLbl { margin-left: auto; font: 12px ui-monospace, Menlo, monospace; color: var(--muted); }
+  #scrub { width: 100%; accent-color: var(--acc); height: 20px; margin: 0; }
+  .ticks { position: relative; height: 14px; margin: 0 7px; }
+  .ticks i { position: absolute; top: 2px; width: 9px; height: 9px; background: var(--ok); transform: translateX(-4px) rotate(45deg); border-radius: 2px; cursor: pointer; }
+  .ticks i:hover { background: #6ee7b7; }
+
+  /* ---------- toasts, errors, fatal ---------- */
+  .toast { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); background: #232838; border: 1px solid var(--line2);
+    padding: 9px 16px; border-radius: 10px; box-shadow: 0 12px 34px rgba(0,0,0,.5); z-index: 20; max-width: 92vw; }
+  #errBanner { position: fixed; left: 50%; top: 10px; transform: translateX(-50%); z-index: 30; max-width: 92vw; padding: 10px 16px;
+    background: #3b1519; border: 1px solid #7f1d1d; color: #fecaca; border-radius: 10px; box-shadow: 0 12px 34px rgba(0,0,0,.5); }
+  #fatal { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px; background: var(--bg); }
+  #fatal .box { max-width: 520px; text-align: center; }
+  #fatal h2 { margin: 0 0 10px; }
+  #fatal p { color: var(--muted); line-height: 1.6; }
+  #boot { position: fixed; inset: 0; z-index: 35; display: grid; place-items: center; background: var(--bg); color: var(--muted); font-size: 15px; }
+
+  /* ---------- smaller screens ---------- */
+  @media (max-width: 1180px) { :root { --lw: 210px; --rw: 270px; } .group .gl { display: none; } }
+  @media (max-width: 900px) {
+    #app { grid-template-columns: minmax(0, 1fr); }
+    aside { position: fixed; top: 0; bottom: 0; z-index: 25; width: min(300px, 88vw); transform: translateX(-105%); transition: transform .2s; box-shadow: 0 0 40px rgba(0,0,0,.6); }
+    aside.right { right: 0; transform: translateX(105%); }
+    aside.open { transform: none; }
+    .only-small { display: inline-block; }
+    #hints { display: none; }
+    .group { border-left: 0; padding-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="boot">Starting Rigger…</div>
+<noscript><div class="nojs" style="position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:#0d0f15;color:#e8eaf2;padding:24px"><div class="box"><h2>JavaScript is off</h2><p>Rigger needs JavaScript. Turn it on in your browser settings and reload.</p></div></div></noscript>
+<div id="fatal" hidden><div class="box"><h2>Rigger could not start</h2><p id="fatalMsg"></p></div></div>
+<div id="errBanner" role="alert" hidden></div>
+
+<div id="app">
+
+  <header>
+    <div class="brand"><i>🦴</i> Rigger</div>
+    <div class="seg" role="tablist" aria-label="Mode">
+      <button id="bRig" class="on" title="Rig mode (key 1): place bones">Rig</button>
+      <button id="bPose" title="Pose mode (key 2): rotate bones and make keyframes">Pose</button>
+    </div>
+
+    <div class="group">
+      <span class="gl">Model</span>
+      <button id="bDemo" title="A demo character with a finger rig">Demo</button>
+      <button id="bImport" title="Open a .glb 3D model">Import .glb</button>
+      <input type="file" id="fileIn" accept=".glb,.gltf" hidden />
+    </div>
+    <div class="group">
+      <span class="gl">Bones</span>
+      <button id="bFit" title="Build a full humanoid rig with 30 finger bones from the loaded model">Auto-fit humanoid</button>
+      <button id="bBone" title="Add a bone (child of the selected one)">+ Bone</button>
+      <button id="bDel" class="danger" title="Delete the selected bone and its children">Delete</button>
+      <button id="bMirror" title="Copy every L bone to its R partner">Mirror L→R</button>
+    </div>
+
+    <span class="spacer"></span>
+    <button id="bPanelL" class="only-small">Bones</button>
+    <button id="bPanelR" class="only-small">Edit</button>
+    <button id="bNew" class="ghost danger" title="Clear everything">New</button>
+    <button id="bExport" class="primary" title="Download a .glb with mesh, rig and animation">⬇ Export .glb</button>
+  </header>
+
+  <aside id="panelL">
+    <div class="ph"><span>Bones</span><span class="count" id="boneCount">0</span></div>
+    <div class="search"><input id="boneFilter" type="search" placeholder="Search bones…" autocomplete="off" /></div>
+    <ul id="boneList"></ul>
+    <details class="help">
+      <summary>How to use</summary>
+      <ol>
+        <li>Click <b>Demo</b>, or <b>Import .glb</b> to load your model.</li>
+        <li>Click <b>Auto-fit humanoid</b>. Fix any joint with the arrows.</li>
+        <li>Press <b>Pose</b>. Rotate a bone, press <kbd>K</kbd>.</li>
+        <li>Move the slider, pose again, <kbd>K</kbd> again.</li>
+        <li><kbd>Space</kbd> plays. Then <b>Export .glb</b>.</li>
+      </ol>
+    </details>
+    <div class="legend"><span class="c">Centre</span><span class="l">Left</span><span class="r">Right</span></div>
+  </aside>
+
+  <main id="stage">
+    <canvas id="view"></canvas>
+    <div id="modeBadge" class="badge rig">RIG MODE</div>
+    <div id="hints" hidden><span><kbd>W</kbd> move</span><span><kbd>E</kbd> rotate</span><span><kbd>K</kbd> keyframe</span><span><kbd>Space</kbd> play</span><span>Right-drag: pan</span></div>
+    <div id="stat"></div>
+    <div id="welcome" class="welcome" hidden>
+      <div class="box">
+        <h1>Rig and animate a 3D character</h1>
+        <p>Works offline. Load a model, add bones with fingers, pose it, and export a .glb for your game.</p>
+        <div class="row">
+          <button id="bWelcomeDemo" class="primary">Try the demo character</button>
+          <button id="bWelcomeImport">Import my .glb model</button>
+        </div>
+        <div class="steps"><span><b>1</b> Load model</span><span><b>2</b> Auto-fit bones</span><span><b>3</b> Pose + key</span><span><b>4</b> Export</span></div>
+        <p style="margin:16px 0 0;font-size:12px">Tip: you can also drag a .glb file onto this window.</p>
+      </div>
+    </div>
+  </main>
+
+  <aside id="panelR" class="right">
+    <div class="ph"><span>Selected bone</span></div>
+    <div id="insEmpty" class="placeholder"><div class="big">☝</div>Click a coloured dot in the 3D view,<br/>or a name in the bone list.</div>
+    <div id="ins" hidden>
+      <div class="card">
+        <div class="field">Name <input id="nm" maxlength="40" /></div>
+        <div class="field" style="margin:0">Length of a leaf bone <input id="ln" type="number" step="0.05" min="0.01" max="30" /></div>
+      </div>
+      <div class="card">
+        <h4>Position</h4>
+        <div class="xyz"><label><b>X</b><input id="px" type="number" step="0.01" /></label><label><b>Y</b><input id="py" type="number" step="0.01" /></label><label><b>Z</b><input id="pz" type="number" step="0.01" /></label></div>
+        <h4 style="margin-top:12px">Rotation (degrees)</h4>
+        <div class="xyz"><label><b>X</b><input id="rx" type="number" step="1" /></label><label><b>Y</b><input id="ry" type="number" step="1" /></label><label><b>Z</b><input id="rz" type="number" step="1" /></label></div>
+        <div id="insMode" class="tip" style="margin-top:10px"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h4>Skin weights</h4>
+      <div class="field" style="margin:0">Sharpness (higher = each vertex follows fewer bones)
+        <input id="wp" type="number" min="0.5" max="4" step="0.5" value="1" /></div>
+    </div>
+    <div class="card tip">
+      <h4>Shortcuts</h4>
+      <kbd>1</kbd> Rig · <kbd>2</kbd> Pose<br/><kbd>W</kbd> move · <kbd>E</kbd> rotate<br/><kbd>K</kbd> keyframe · <kbd>Space</kbd> play<br/><kbd>Del</kbd> delete bone · <kbd>Esc</kbd> deselect
+    </div>
+  </aside>
+
+  <footer>
+    <div class="transport">
+      <button id="bStop" title="Back to 0">⏮ Start</button>
+      <button id="bPlay" disabled title="Space">▶ Play</button>
+      <button id="bKey" class="primary" title="Shortcut K">◆ Key all bones</button>
+      <button id="bDelKey">Delete keys here</button>
+      <label>Length (s) <input id="dur" type="number" min="0.2" max="60" step="0.1" value="2" /></label>
+      <span id="timeLbl">0.00 / 2.00 s</span>
+    </div>
+    <input id="scrub" type="range" min="0" max="2" step="0.01" value="0" aria-label="Timeline" />
+    <div id="ticks" class="ticks" title="Keyframes. Click one to jump to it."></div>
+  </footer>
+
+</div>
+
+<script>
+/*__BUNDLE__*/
+</script>
+<script>document.getElementById('boot').hidden = true;</script>
+</body>
+</html>

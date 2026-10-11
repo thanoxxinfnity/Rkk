@@ -2,23 +2,20 @@
 
 One HTML file. It runs in the browser, needs no install, and draws only when something changes, so it stays light on low-RAM PCs.
 
-## Start it (terminal)
+## Start it
 
-Windows (PowerShell or CMD):
+`index.html` is one self-contained file (three.js is inside it). It works **offline**, needs **no install and no Python**.
 
-    cd Rkk\rigger
-    python -m http.server 8000
+**Just double-click `index.html`.** It opens in your browser (Chrome or Firefox work best).
 
-Mac or Linux:
+If you prefer a terminal, this also works:
 
     cd Rkk/rigger
-    python3 -m http.server 8000
+    python3 -m http.server 8000      (Windows: python -m http.server 8000)
 
-Then open **http://localhost:8000** in Chrome or Firefox.
+Then open http://localhost:8000. Stop it with Ctrl + C.
 
-No Python? Use Node: `npx serve rigger`. You can also try double-clicking `index.html`. If the screen stays blank, use the server command. The three.js library loads from a CDN, so the first start needs internet.
-
-Stop the server with **Ctrl + C**.
+If the page shows a message instead of the tool, read it: it says what is wrong (for example, the browser has no WebGL: turn on hardware acceleration or try another browser).
 
 ## How to use
 
@@ -44,3 +41,12 @@ Stop the server with **Ctrl + C**.
 - Only `.glb` and `.gltf` import. FBX and OBJ are not supported yet.
 - Undo is not implemented yet.
 - Keyframes are stored per bone in local space. If you change the rest pose after keying, existing keys can shift. Re-key after big rig changes.
+
+## For developers
+
+`index.html` is built. Edit `src/main.js` and `src/template.html`, then run:
+
+    npm install
+    npm run build
+
+The build bundles three.js into `index.html` with esbuild.

@@ -1,0 +1,8 @@
+{
+  "name": "rigger",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Rig and animate 3D characters in the browser. Builds to one offline index.html.",
+  "scripts": { "build": "node build.mjs" },
+  "devDependencies": { "esbuild": "^0.28.2", "three": "0.160.0" }
+}
