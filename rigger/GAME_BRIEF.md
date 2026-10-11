@@ -43,7 +43,7 @@ Target: a three.js game that runs in the browser, unless the user names another 
 
 ## 4. Rules
 
-- Do not edit `rigger/index.html`. It is the tool. Put the game in its own folder (for example `game/`).
+- Do not edit the Rigger tool (`rigger/`). Put the game in its own folder (for example `game/`). To run Rigger, see `rigger/RUN_ME.md`.
 - Keep the bone names listed above as the contract. If a name changes in the rig, update the game in the same change.
 - Test with a local server, not with `file://`: `python -m http.server 8000` in the game folder, then open http://localhost:8000.
 - Keep the code in plain modules (ES modules with an import map to three.js CDN, same as Rigger). Do not add a build step unless the user asks.
